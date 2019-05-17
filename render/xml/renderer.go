@@ -1,8 +1,13 @@
 package xml
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"math/rand"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -481,12 +486,44 @@ func (r *Renderer) code(w io.Writer, node *ast.Code) {
 	r.outs(w, "</tt>")
 }
 
+func renderKatex(math []byte) []byte {
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+
+	// create a temp file
+	var tmpfile = fmt.Sprintf("/tmp/out%d.txt", rand.Int()%9999999)
+	defer func() {
+		err := os.Remove(tmpfile)
+		if err != nil {
+			panic(err)
+		}
+	}()
+	// write the math to it
+	err := ioutil.WriteFile(tmpfile, math, 0666)
+	if err != nil {
+		panic(err)
+	}
+	// run katex against it
+	cmd := exec.Command("katex", "-i", tmpfile)
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		// Maybe insert this cleverly into the output?
+		fmt.Println("Got error while trying to parse latex", err)
+		panic(err)
+	}
+	return out.Bytes()
+}
+
 func (r *Renderer) mathBlock(w io.Writer, mathBlock *ast.MathBlock) {
 	r.outs(w, `<artwork type="math">`+"\n")
+
+	renderedMath := renderKatex(mathBlock.Literal)
+
 	if r.opts.Comments != nil {
-		EscapeHTMLCallouts(w, mathBlock.Literal, r.opts.Comments)
+		EscapeHTMLCallouts(w, renderedMath, r.opts.Comments)
 	} else {
-		html.EscapeHTML(w, mathBlock.Literal)
+		html.EscapeHTML(w, renderedMath)
 	}
 	r.outs(w, `</artwork>`)
 	r.cr(w)
